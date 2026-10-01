@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Лут гильдии</title>
+<style>
+:root{--bg:#14161c;--card:#1d2029;--tx:#e6e8ee;--mut:#8a90a2;--ac:#6c8cff;--ok:#4cc38a;--bd:#2c3040}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.4 system-ui,sans-serif;padding:16px;max-width:1000px;margin:auto}
+h2{margin:0 0 10px;font-size:16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:14px}
+input,select,button{background:#262a36;color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:6px 8px;font:inherit}
+input[type=number]{width:110px}
+button{cursor:pointer}button.p{background:var(--ac);border-color:var(--ac);color:#fff}
+button.x{color:#e66}
+table{width:100%;border-collapse:collapse}
+td,th{padding:5px 6px;border-bottom:1px solid var(--bd);text-align:left;vertical-align:middle}
+th{color:var(--mut);font-weight:500}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mut{color:var(--mut)}.sug{color:var(--ok);font-weight:600}
+.bar{height:6px;background:#262a36;border-radius:3px;margin-top:3px}.bar i{display:block;height:100%;background:var(--ac);border-radius:3px}
+.scroll{overflow-x:auto}
+</style>
+</head>
+<body>
+<div class="row" style="justify-content:space-between;margin-bottom:12px">
+  <h2 style="margin:0">Лут гильдии</h2>
+  <div id="auth"></div>
+</div>
+
+<div class="card">
+  <h2>Участники</h2>
+  <div class="edit row" style="margin-bottom:10px">
+    <input id="mName" placeholder="Ник участника">
+    <button class="p" onclick="addMember()">Добавить</button>
+  </div>
+  <div class="scroll"><table id="mTable"></table></div>
+</div>
+
+<div class="card edit">
+  <h2>Добавить предмет</h2>
+  <div class="row">
+    <input id="iName" placeholder="Название предмета">
+    <input id="iPrice" type="number" min="0" placeholder="Цена (люценты)">
+    <select id="iOwner"></select>
+    <button class="p" onclick="addItem()">Добавить</button>
+  </div>
+  <div class="mut" style="margin-top:6px">Владельца выбирай, только если предмет уже выдан (например, первый ролл). Иначе оставь «не выдан».</div>
+</div>
+
+<div class="card">
+  <h2>Не выданные предметы</h2>
+  <div class="edit row" style="margin-bottom:10px">
+    <button class="p" onclick="suggest()">Предложить распределение</button>
+    <button onclick="applyProposal()" id="applyBtn" disabled>Применить предложенное</button>
+  </div>
+  <div class="scroll"><table id="uTable"></table></div>
+</div>
+
+<div class="card">
+  <h2>История выдачи</h2>
+  <div class="scroll"><table id="aTable"></table></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+// ВСТАВЬ СВОЙ КОНФИГ из Firebase Console → Project settings → Your apps
+firebase.initializeApp({
+  apiKey: "...", authDomain: "...", projectId: "...", appId: "..."
+});
+const auth = firebase.auth(), db = firebase.firestore();
+let members = [], items = [], user = null, proposal = {};
+
+const val = i => i.finalPrice != null ? i.finalPrice : i.estPrice;
+const fmt = n => Math.round(n).toLocaleString('ru-RU');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const mName = id => (members.find(m => m.id === id) || {name: '—'}).name;
+const TS = () => firebase.firestore.FieldValue.serverTimestamp();
+const ts = t => t && t.toMillis ? t.toMillis() : 0;
+const fmtDate = t => t && t.toDate ? t.toDate().toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit'}) : '—';
+const open = new Set();
+function toggle(id) { open.has(id) ? open.delete(id) : open.add(id); render(); }
+function hist(id) {
+  const l = items.filter(i => i.assignedTo === id).sort((a, b) => ts(b.assignedAt) - ts(a.assignedAt));
+  return l.length ? l.map(i => `<div>${fmtDate(i.assignedAt)} — ${esc(i.name)} — ${fmt(val(i))} ${i.finalPrice != null ? '<span class="sug">(продано)</span>' : '<span class="mut">(оценка)</span>'}</div>`).join('') : '<span class="mut">Ничего не выдано</span>';
+}
+
+auth.onAuthStateChanged(u => { user = u; renderAuth(); render(); });
+db.collection('members').orderBy('name').onSnapshot(s => { members = s.docs.map(d => ({id: d.id, ...d.data()})); render(); });
+db.collection('items').orderBy('created').onSnapshot(s => { items = s.docs.map(d => ({id: d.id, ...d.data()})); render(); });
+
+function renderAuth() {
+  document.getElementById('auth').innerHTML = user
+    ? `<span class="mut">${esc(user.email)}</span> <button onclick="auth.signOut()">Выйти</button>`
+    : `<button onclick="login()">Войти (админ)</button>`;
+}
+function login() {
+  const e = prompt('Email'); if (!e) return;
+  const p = prompt('Пароль'); if (!p) return;
+  auth.signInWithEmailAndPassword(e, p).catch(err => alert(err.message));
+}
+
+function addMember() {
+  const n = mName_.value.trim(); if (!n) return;
+  db.collection('members').add({name: n}); mName_.value = '';
+}
+const mName_ = document.getElementById('mName');
+function delMember(id) {
+  const has = items.some(i => i.assignedTo === id);
+  if (confirm(has ? 'У участника есть предметы — они станут не выданными. Удалить?' : 'Удалить участника?')) {
+    items.filter(i => i.assignedTo === id).forEach(i => db.collection('items').doc(i.id).update({assignedTo: null, assignedAt: null}));
+    db.collection('members').doc(id).delete();
+  }
+}
+function addItem() {
+  const n = iName.value.trim(), p = parseFloat(iPrice.value);
+  if (!n || isNaN(p)) return alert('Нужны название и цена');
+  db.collection('items').add({
+    name: n, estPrice: p, finalPrice: null,
+    assignedTo: iOwner.value || null,
+    assignedAt: iOwner.value ? TS() : null,
+    created: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  iName.value = ''; iPrice.value = '';
+}
+const upd = (id, data) => db.collection('items').doc(id).update(data);
+function setEst(id, v) { upd(id, {estPrice: parseFloat(v) || 0}); }
+function setFinal(id, v) { upd(id, {finalPrice: v === '' ? null : parseFloat(v)}); }
+function setOwner(id, v) { upd(id, {assignedTo: v || null, assignedAt: v ? TS() : null}); }
+function delItem(id) { if (confirm('Удалить предмет?')) db.collection('items').doc(id).delete(); }
+
+// Жадное распределение: самый дорогой предмет -> тому, у кого сейчас меньше всего суммарно.
+function suggest() {
+  if (!members.length) return alert('Нет участников');
+  const tot = {}, cnt = {};
+  members.forEach(m => { tot[m.id] = 0; cnt[m.id] = 0; });
+  items.filter(i => i.assignedTo && tot[i.assignedTo] !== undefined)
+       .forEach(i => { tot[i.assignedTo] += val(i); cnt[i.assignedTo]++; });
+  proposal = {};
+  items.filter(i => !i.assignedTo).sort((a, b) => val(b) - val(a)).forEach(it => {
+    const m = [...members].sort((a, b) => tot[a.id] - tot[b.id] || cnt[a.id] - cnt[b.id] || a.name.localeCompare(b.name))[0];
+    proposal[it.id] = m.id; tot[m.id] += val(it); cnt[m.id]++;
+  });
+  render();
+}
+function applyProposal() {
+  const b = db.batch();
+  Object.entries(proposal).forEach(([iid, mid]) => b.update(db.collection('items').doc(iid), {assignedTo: mid, assignedAt: TS()}));
+  b.commit().then(() => { proposal = {}; });
+}
+
+function ownerSelect(it) {
+  return `<select ${user ? '' : 'disabled'} onchange="setOwner('${it.id}',this.value)">
+    <option value="">не выдан</option>` +
+    members.map(m => `<option value="${m.id}" ${it.assignedTo === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('') + `</select>`;
+}
+function itemRow(it, extra = '') {
+  const d = user ? '' : 'disabled';
+  return `<tr><td>${esc(it.name)}</td>
+    <td><input type="number" ${d} value="${it.estPrice}" onchange="setEst('${it.id}',this.value)"></td>
+    <td><input type="number" ${d} value="${it.finalPrice ?? ''}" placeholder="—" onchange="setFinal('${it.id}',this.value)"></td>
+    ${extra}<td>${ownerSelect(it)}</td>
+    <td>${user ? `<button class="x" onclick="delItem('${it.id}')">✕</button>` : ''}</td></tr>`;
+}
+
+function render() {
+  document.querySelectorAll('.edit').forEach(e => e.style.display = user ? '' : 'none');
+  const opts = '<option value="">не выдан</option>' + members.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+  if (iOwner.innerHTML !== opts) { const c = iOwner.value; iOwner.innerHTML = opts; iOwner.value = c; }
+
+  const tot = {}, cnt = {}, fin = {};
+  members.forEach(m => { tot[m.id] = 0; cnt[m.id] = 0; fin[m.id] = 0; });
+  items.forEach(i => { if (tot[i.assignedTo] !== undefined) { tot[i.assignedTo] += val(i); cnt[i.assignedTo]++; if (i.finalPrice != null) fin[i.assignedTo] += i.finalPrice; } });
+  const max = Math.max(1, ...Object.values(tot));
+  mTable.innerHTML = '<tr><th>Участник</th><th>Предметов</th><th>Итого (текущая оценка)</th><th>Из них продано</th><th></th></tr>' +
+    [...members].sort((a, b) => tot[b.id] - tot[a.id]).map(m => `<tr style="cursor:pointer" onclick="toggle('${m.id}')">
+      <td>${open.has(m.id) ? '▾' : '▸'} ${esc(m.name)}</td><td>${cnt[m.id]}</td>
+      <td>${fmt(tot[m.id])}<div class="bar"><i style="width:${tot[m.id] / max * 100}%"></i></div></td>
+      <td class="mut">${fmt(fin[m.id])}</td>
+      <td>${user ? `<button class="x" onclick="event.stopPropagation();delMember('${m.id}')">✕</button>` : ''}</td></tr>
+      ${open.has(m.id) ? `<tr><td colspan="5" style="padding-left:24px">${hist(m.id)}</td></tr>` : ''}`).join('');
+
+  const un = items.filter(i => !i.assignedTo).sort((a, b) => val(b) - val(a));
+  uTable.innerHTML = un.length
+    ? '<tr><th>Предмет</th><th>Предв. цена</th><th>Оконч. цена</th><th>Предложено</th><th>Выдать</th><th></th></tr>' +
+      un.map(i => itemRow(i, `<td class="sug">${proposal[i.id] ? esc(mName(proposal[i.id])) : ''}</td>`)).join('')
+    : '<tr><td class="mut">Нет невыданных предметов</td></tr>';
+  applyBtn.disabled = !Object.keys(proposal).length;
+
+  const as = items.filter(i => i.assignedTo).sort((a, b) => ts(b.assignedAt) - ts(a.assignedAt));
+  aTable.innerHTML = as.length
+    ? '<tr><th>Предмет</th><th>Предв. цена</th><th>Оконч. цена</th><th>Дата выдачи</th><th>Владелец</th><th></th></tr>' + as.map(i => itemRow(i, `<td class="mut">${fmtDate(i.assignedAt)}</td>`)).join('')
+    : '<tr><td class="mut">Пока пусто</td></tr>';
+}
+</script>
+</body>
+</html>
