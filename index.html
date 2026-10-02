@@ -109,7 +109,12 @@ td{padding:7px 6px;border-top:1px solid var(--bd);vertical-align:middle}
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
 // ВСТАВЬ СВОЙ КОНФИГ из Firebase Console → Project settings → Your apps
-firebase.initializeApp({ apiKey: "...", authDomain: "...", projectId: "...", appId: "..." });
+firebase.initializeApp({  apiKey: "AIzaSyA8wJ1QhDmBCvodsklHhh1HqB5ltFj4V6E",
+  authDomain: "twinguildloot.firebaseapp.com",
+  projectId: "twinguildloot",
+  storageBucket: "twinguildloot.firebasestorage.app",
+  messagingSenderId: "118563771786",
+  appId: "1:118563771786:web:34c71a4dc9ed1495f92473" });
 const auth = firebase.auth(), db = firebase.firestore();
 let members = [], items = [], user = null, proposal = {};
 const sel = new Set(), seen = new Set(), open = new Set(), cover = {};
