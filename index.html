@@ -47,16 +47,17 @@ td{padding:7px 6px;border-top:1px solid var(--bd);vertical-align:middle}
 .chip.sub.on{background:#ffb74d20;border-color:#ffb74d}
 .hint{font-size:12px;color:var(--mut);margin:6px 0 0}
 .empty{color:var(--mut);padding:10px 4px}
+#mList{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px;align-items:start}#mList .m{margin-bottom:0}#mList .lbl{grid-column:1/-1}
 .i{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px;flex:none}
 </style>
 </head>
 <body>
 <div class="wrap">
-<header><h1>Лут гильдии</h1><div id="auth"></div></header>
+<header><h1>ПОРКА ОРКА</h1><div id="auth"></div></header>
 
 <div class="stats" id="stats"></div>
 
-<div class="grid">
+<div class="grid" id="grid">
   <div>
     <div class="card">
       <h2><svg class="i" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Участники</h2>
@@ -69,7 +70,7 @@ td{padding:7px 6px;border-top:1px solid var(--bd);vertical-align:middle}
     </div>
   </div>
 
-  <div>
+  <div id="side">
     <div class="card edit">
       <h2><svg class="i" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg> Новый предмет</h2>
       <div class="row">
@@ -108,13 +109,14 @@ td{padding:7px 6px;border-top:1px solid var(--bd);vertical-align:middle}
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
-// ВСТАВЬ СВОЙ КОНФИГ из Firebase Console → Project settings → Your apps
-firebase.initializeApp({  apiKey: "AIzaSyA8wJ1QhDmBCvodsklHhh1HqB5ltFj4V6E",
+firebase.initializeApp({
+  apiKey: "AIzaSyA8wJ1QhDmBCvodsklHhh1HqB5ltFj4V6E",
   authDomain: "twinguildloot.firebaseapp.com",
   projectId: "twinguildloot",
   storageBucket: "twinguildloot.firebasestorage.app",
   messagingSenderId: "118563771786",
-  appId: "1:118563771786:web:34c71a4dc9ed1495f92473" });
+  appId: "1:118563771786:web:34c71a4dc9ed1495f92473"
+});
 const auth = firebase.auth(), db = firebase.firestore();
 let members = [], items = [], user = null, proposal = {};
 const sel = new Set(), seen = new Set(), open = new Set(), cover = {};
@@ -219,6 +221,8 @@ function memberCard(m, t, max) {
 
 function render() {
   document.querySelectorAll('.edit').forEach(e => e.style.display = user ? '' : 'none');
+  $('side').style.display = user ? '' : 'none';
+  $('grid').style.gridTemplateColumns = user ? '' : '1fr';
   const opts = '<option value="">не выдан</option>' + members.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
   if ($('iOwner').innerHTML !== opts) { const c = $('iOwner').value; $('iOwner').innerHTML = opts; $('iOwner').value = c; }
 
@@ -231,7 +235,7 @@ function render() {
   const subs = members.filter(m => m.sub).sort((a, b) => t[b.id].sum - t[a.id].sum);
   const max = Math.max(1, ...mains.map(m => t[m.id].sum));
   $('mList').innerHTML = (mains.map(m => memberCard(m, t[m.id], max)).join('') || '<div class="empty">Добавь участников</div>')
-    + (subs.length ? '<div class="mut" style="margin:12px 0 6px;font-size:12px">Замены</div>' + subs.map(m => memberCard(m, t[m.id], max)).join('') : '');
+    + (subs.length ? '<div class="mut lbl" style="margin-top:6px;font-size:12px">Замены</div>' + subs.map(m => memberCard(m, t[m.id], max)).join('') : '');
 
   const mainsAll = members.filter(m => !m.sub), subsAll = members.filter(m => m.sub);
   $('chips').innerHTML = mainsAll.map(m => `<span class="chip ${sel.has(m.id) ? 'on' : ''}" onclick="togSel('${m.id}')">${esc(m.name)}</span>`).join('');
